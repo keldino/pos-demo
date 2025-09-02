@@ -1,171 +1,376 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>POS Barcode Scanner</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Barcode POS Scanner (HTML/CSS/JS)</title>
   <style>
-    body { background:#0b0f14; color:white; font-family:Arial, sans-serif; margin:0; padding:0; }
-    .container { display:grid; grid-template-columns:1fr 1fr; gap:1rem; padding:1rem; min-height:100vh; }
-    .card { background:#0f1720; border-radius:12px; padding:1rem; }
-    video { width:100%; height:250px; object-fit:cover; background:black; border-radius:12px; }
-    table { width:100%; border-collapse:collapse; margin-top:1rem; }
-    table th, table td { border:1px solid #333; padding:4px; text-align:center; }
-    input, select, button { padding:0.5rem; border:1px solid #333; border-radius:8px; background:#1e293b; color:white; }
-    button { cursor:pointer; }
-    .actions { display:flex; gap:0.5rem; margin-top:0.5rem; justify-content:flex-end; }
+    :root{
+      --bg:#0f1720; --card:#0b1220; --muted:#94a3b8; --accent:#06b6d4; --accent-2:#7c3aed;
+      --success:#10b981; --danger:#ef4444; --glass: rgba(255,255,255,0.03);
+    }
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0;background:linear-gradient(180deg,var(--bg),#071021);color:#e6eef6;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px}
+    .app{width:100%;max-width:1100px}
+    header{display:flex;gap:16px;align-items:center;margin-bottom:14px}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+
+    .grid{display:grid;grid-template-columns: 420px 1fr;gap:18px}
+    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 20px rgba(2,6,23,0.6)}
+
+    /* left: camera + controls */
+    #cameraArea{display:flex;flex-direction:column;gap:10px}
+    video{width:100%;height:280px;object-fit:cover;border-radius:8px;background:#000}
+    .controls{display:flex;gap:8px;align-items:center}
+    select,input[type=button],button{background:var(--glass);border:1px solid rgba(255,255,255,0.03);color:inherit;padding:8px 10px;border-radius:8px}
+    .btn{cursor:pointer}
+    .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:#021018}
+    .status{font-size:13px;color:var(--muted)}
+
+    /* right: form + cart */
+    form{display:flex;flex-direction:column;gap:8px}
+    label{font-size:12px;color:var(--muted)}
+    input[type=text],input[type=number]{background:#06131b;border:1px solid rgba(255,255,255,0.03);padding:10px;border-radius:8px;color:inherit}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:8px;text-align:left;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:13px}
+    tfoot td{font-weight:700}
+
+    .samples{margin-top:12px;font-size:13px;color:var(--muted)}
+    .small{font-size:12px;color:var(--muted)}
+
+    footer.note{margin-top:12px;color:var(--muted);font-size:12px}
+
+    @media(max-width:980px){.grid{grid-template-columns:1fr;}}
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h2>Barcode Scanner</h2>
-      <video id="video" autoplay playsinline></video>
-      <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
-        <select id="cameraSelect"></select>
-        <button onclick="startCamera()">Start</button>
-        <button onclick="stopCamera()">Stop</button>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Barcode POS Scanner</h1>
+        <p class="lead">Scan barcodes with mobile or PC camera. Choose front/rear camera, add items, qty &amp; price.</p>
       </div>
-      <p>Scanned: <span id="barcodeText">—</span></p>
-      <input type="text" id="barcodeInput" placeholder="Enter barcode">
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem; margin-top:0.5rem;">
-        <input type="text" id="nameInput" placeholder="Name">
-        <input type="number" id="priceInput" placeholder="Price">
-        <input type="number" id="qtyInput" placeholder="Qty" value="1">
+    </header>
+
+    <div class="grid">
+      <div class="card" id="cameraCard">
+        <div id="cameraArea">
+          <video id="video" autoplay playsinline></video>
+          <div class="controls">
+            <select id="cameraSelect" aria-label="Select camera"></select>
+            <button id="flipBtn" class="btn">Flip Camera</button>
+            <button id="startBtn" class="btn btn-primary">Start</button>
+            <button id="stopBtn" class="btn">Stop</button>
+          </div>
+          <div class="status"><span id="statusText">Idle</span> • Detected: <strong id="detected">—</strong></div>
+        </div>
       </div>
-      <div class="actions">
-        <button onclick="addItem()">Add</button>
-        <button onclick="clearCart()">Clear</button>
-        <button onclick="printReceipt()">Print</button>
+
+      <div class="card">
+        <form id="itemForm" onsubmit="return false">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label for="barcodeInput">Barcode / Serial</label>
+              <input id="barcodeInput" type="text" placeholder="Scan or type barcode" />
+            </div>
+            <div style="width:120px">
+              <label for="qtyInput">Qty</label>
+              <input id="qtyInput" type="number" min="1" value="1" />
+            </div>
+            <div style="width:120px">
+              <label for="priceInput">Price</label>
+              <input id="priceInput" type="number" min="0" step="0.01" value="0.00" />
+            </div>
+          </div>
+          <label for="nameInput">Item name</label>
+          <input id="nameInput" type="text" placeholder="Item name (auto-filled if sample match)" />
+
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button id="addBtn" class="btn btn-primary">Add to list</button>
+            <button id="clearBtn" class="btn">Clear</button>
+          </div>
+        </form>
+
+        <div class="samples">
+          <strong>Sample items (barcode → name → price):</strong>
+          <ul id="sampleList">
+            <!-- Filled by JS -->
+          </ul>
+        </div>
+
+        <div style="margin-top:12px">
+          <table id="cartTable">
+            <thead>
+              <tr><th>Barcode</th><th>Name</th><th>Qty</th><th>Price</th><th>Subtotal</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr><td colspan="4">Total</td><td id="totalCell">0.00</td><td></td></tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <footer class="note">Tip: allow camera permission. If your browser does not support the modern BarcodeDetector API, the app will use a JavaScript fallback to scan image frames.</footer>
       </div>
-    </div>
-    <div class="card">
-      <h2>Cart</h2>
-      <table>
-        <thead>
-          <tr><th>Barcode</th><th>Name</th><th>Price</th><th>Qty</th><th>Line</th><th></th></tr>
-        </thead>
-        <tbody id="cartBody"></tbody>
-      </table>
-      <div style="text-align:right; font-weight:bold; margin-top:0.5rem;">Total: <span id="total">0.00</span></div>
     </div>
   </div>
 
   <script>
-    let cart = JSON.parse(localStorage.getItem('pos-cart') || '[]');
-    let detector, scanning = false;
+    // ---------- Sample items ----------
+    const SAMPLES = [
+      {barcode: '8901234567890', name: 'Classic Chocolate Bar', price: 45.00},
+      {barcode: '012345678905', name: 'Bottle Water 1L', price: 30.00},
+      {barcode: '200300400500', name: 'Notebook A5', price: 120.00},
+      {barcode: '978020137962', name: 'Fiction Paperback', price: 350.00},
+      {barcode: '111222333444', name: 'USB Flash 32GB', price: 499.00}
+    ];
 
+    // Render sample list
+    const sampleListEl = document.getElementById('sampleList');
+    SAMPLES.forEach(s=>{
+      const li = document.createElement('li');
+      li.textContent = `${s.barcode} → ${s.name} → ₱${s.price.toFixed(2)}`;
+      sampleListEl.appendChild(li);
+    });
+
+    // ---------- DOM elements ----------
     const video = document.getElementById('video');
     const cameraSelect = document.getElementById('cameraSelect');
-    const barcodeText = document.getElementById('barcodeText');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const flipBtn = document.getElementById('flipBtn');
+    const statusText = document.getElementById('statusText');
+    const detectedEl = document.getElementById('detected');
 
-    async function loadCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      cameraSelect.innerHTML = cams.map(c => `<option value="${c.deviceId}">${c.label || 'Camera'}</option>`).join('');
+    const barcodeInput = document.getElementById('barcodeInput');
+    const qtyInput = document.getElementById('qtyInput');
+    const priceInput = document.getElementById('priceInput');
+    const nameInput = document.getElementById('nameInput');
+    const addBtn = document.getElementById('addBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    const cartTableBody = document.querySelector('#cartTable tbody');
+    const totalCell = document.getElementById('totalCell');
+
+    // ---------- state ----------
+    let stream = null;
+    let scanning = false;
+    let currentDeviceId = null;
+    let useFacingMode = 'environment'; // or 'user'
+
+    // Canvas for processing frames
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Fallback flag for jsQR
+    let useInputJSQR = false;
+    let jsQRLoaded = false;
+
+    // Load jsQR fallback script (only if BarcodeDetector is not available)
+    function injectJSQR(){
+      return new Promise((resolve,reject)=>{
+        if(jsQRLoaded) return resolve();
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+        s.onload = ()=>{ jsQRLoaded = true; resolve(); };
+        s.onerror = ()=>reject(new Error('Failed to load jsQR fallback'));
+        document.head.appendChild(s);
+      });
     }
 
-    async function startCamera() {
-      const deviceId = cameraSelect.value;
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId ? { exact: deviceId } : undefined } });
-      video.srcObject = stream;
-      if ('BarcodeDetector' in window) {
-        const formats = await BarcodeDetector.getSupportedFormats();
-        detector = new BarcodeDetector({ formats });
-      } else {
-        await loadZXing();
-        const codeReader = new ZXing.BrowserMultiFormatReader();
-        detector = { detect: async canvas => { try { const res = await codeReader.decodeFromImage(undefined, canvas); return [{ rawValue: res.text }]; } catch { return []; } } };
+    // Enumerate cameras
+    async function populateCameras(){
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d=>d.kind==='videoinput');
+        cameraSelect.innerHTML = '';
+        cams.forEach((c,i)=>{
+          const opt = document.createElement('option');
+          opt.value = c.deviceId;
+          opt.textContent = c.label || `Camera ${i+1}`;
+          cameraSelect.appendChild(opt);
+        });
+        if(cams.length) currentDeviceId = cams[0].deviceId;
+      }catch(err){
+        console.warn('enumerateDevices failed',err);
       }
-      scanning = true;
-      requestAnimationFrame(scanLoop);
     }
 
-    function stopCamera() {
+    // Start camera with deviceId or facingMode
+    async function startCamera(){
+      stopCamera();
+      statusText.textContent = 'Starting camera...';
+      try{
+        let constraints = {};
+        if(currentDeviceId){
+          constraints = { video: { deviceId: { exact: currentDeviceId } , width: {ideal:1280}, height:{ideal:720} } };
+        } else {
+          constraints = { video: { facingMode: useFacingMode, width:{ideal:1280}, height:{ideal:720} } };
+        }
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await video.play();
+        statusText.textContent = 'Camera running';
+        scanning = true;
+        detectLoop();
+      }catch(err){
+        console.error(err);
+        statusText.textContent = 'Camera error: ' + (err.message||err.name);
+      }
+    }
+
+    function stopCamera(){
       scanning = false;
-      video.srcObject?.getTracks().forEach(t => t.stop());
+      detectedEl.textContent = '—';
+      statusText.textContent = 'Idle';
+      if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+        stream = null;
+      }
       video.srcObject = null;
     }
 
-    async function scanLoop() {
-      if (!scanning) return;
-      const canvas = document.createElement('canvas');
+    cameraSelect.addEventListener('change',()=>{
+      currentDeviceId = cameraSelect.value;
+      startCamera();
+    });
+
+    flipBtn.addEventListener('click',()=>{
+      // flip between user and environment (mobile friendly)
+      useFacingMode = (useFacingMode === 'environment') ? 'user' : 'environment';
+      currentDeviceId = null; // prefer facing mode
+      startCamera();
+    });
+
+    startBtn.addEventListener('click', async ()=>{
+      await populateCameras();
+      // If BarcodeDetector not available, prepare fallback
+      if(!('BarcodeDetector' in window)){
+        console.log('BarcodeDetector not supported, loading jsQR fallback');
+        try{ await injectJSQR(); useInputJSQR = true; }catch(e){ console.warn(e); }
+      }
+      await startCamera();
+    });
+
+    stopBtn.addEventListener('click', ()=>{ stopCamera(); });
+
+    // Detection loop: uses BarcodeDetector API when available, else jsQR fallback
+    async function detectLoop(){
+      if(!scanning) return;
+      if(video.readyState < 2){ requestAnimationFrame(detectLoop); return; }
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
-      if (detector) {
-        try {
-          const codes = await (detector.detect ? detector.detect(canvas) : detector.decode(canvas.toDataURL()));
-          if (codes.length) {
-            document.getElementById('barcodeInput').value = codes[0].rawValue;
-            barcodeText.textContent = codes[0].rawValue;
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+      try{
+        if('BarcodeDetector' in window){
+          // try preferred barcode formats
+          const formats = ['code_128','ean_13','ean_8','upc_e','upc_a','code_39','qr_code'];
+          let detector = new BarcodeDetector({formats});
+          const barcodes = await detector.detect(canvas);
+          if(barcodes && barcodes.length){
+            const raw = barcodes[0].rawValue || barcodes[0].raw;
+            onDetected(raw);
           }
-        } catch {}
+        } else if(useInputJSQR && window.jsQR){
+          const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          if(code && code.data){ onDetected(code.data); }
+        }
+      }catch(err){
+        // some browsers may throw for unsupported formats; ignore and continue
+        // console.warn('detect error', err);
       }
-      requestAnimationFrame(scanLoop);
+      requestAnimationFrame(detectLoop);
     }
 
-    function addItem() {
-      const barcode = document.getElementById('barcodeInput').value;
-      const name = document.getElementById('nameInput').value;
-      const price = parseFloat(document.getElementById('priceInput').value) || 0;
-      const qty = parseInt(document.getElementById('qtyInput').value) || 1;
-      if (!barcode || !name) return alert('Fill barcode and name');
-      cart.push({ barcode, name, price, qty });
-      saveCart();
+    let lastDetected = null;
+    function onDetected(value){
+      if(!value) return;
+      // avoid flooding: require stable detection
+      if(lastDetected && lastDetected.time && (Date.now()-lastDetected.time < 1200) && lastDetected.value===value) return;
+      lastDetected = {value, time: Date.now()};
+      detectedEl.textContent = value;
+      statusText.textContent = 'Detected barcode';
+      barcodeInput.value = value;
+
+      // try match sample
+      const s = SAMPLES.find(x=>x.barcode === value);
+      if(s){ nameInput.value = s.name; priceInput.value = s.price.toFixed(2); }
+
+      // auto-add? Not by default. User can press Add.
     }
 
-    function saveCart() {
-      localStorage.setItem('pos-cart', JSON.stringify(cart));
+    // ---------- Cart logic ----------
+    const CART = [];
+    function renderCart(){
+      cartTableBody.innerHTML = '';
+      let total = 0;
+      CART.forEach((it,idx)=>{
+        const tr = document.createElement('tr');
+        const subtotal = it.qty * it.price;
+        total += subtotal;
+        tr.innerHTML = `<td>${it.barcode}</td><td>${escapeHtml(it.name)}</td><td>${it.qty}</td><td>₱${it.price.toFixed(2)}</td><td>₱${subtotal.toFixed(2)}</td><td><button data-idx="${idx}" class="delBtn">Remove</button></td>`;
+        cartTableBody.appendChild(tr);
+      });
+      totalCell.textContent = `₱${total.toFixed(2)}`;
+
+      // attach remove handlers
+      document.querySelectorAll('.delBtn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const i = Number(btn.dataset.idx);
+          CART.splice(i,1);
+          renderCart();
+        });
+      });
+    }
+
+    addBtn.addEventListener('click', ()=>{
+      const barcode = barcodeInput.value.trim();
+      const name = nameInput.value.trim() || 'Unnamed item';
+      const qty = Math.max(1, Number(qtyInput.value) || 1);
+      const price = Number(priceInput.value) || 0;
+      if(!barcode){ alert('Please enter or scan a barcode'); return; }
+      CART.push({barcode,name,qty,price});
       renderCart();
-    }
+      // keep inputs for quick repeat, but clear barcode
+      barcodeInput.value = '';
+      detectedEl.textContent = '—';
+      nameInput.value = '';
+      priceInput.value = '0.00';
+    });
 
-    function removeItem(i) {
-      cart.splice(i, 1);
-      saveCart();
-    }
+    clearBtn.addEventListener('click', ()=>{
+      barcodeInput.value = '';
+      nameInput.value = '';
+      priceInput.value = '0.00';
+      qtyInput.value = 1;
+    });
 
-    function clearCart() {
-      if (!confirm('Clear cart?')) return;
-      cart = [];
-      saveCart();
-    }
+    // Quick manual sample list clicking to fill inputs
+    sampleListEl.addEventListener('click', (e)=>{
+      const li = e.target.closest('li');
+      if(!li) return;
+      const idx = Array.from(sampleListEl.children).indexOf(li);
+      if(idx >=0 && SAMPLES[idx]){
+        barcodeInput.value = SAMPLES[idx].barcode;
+        nameInput.value = SAMPLES[idx].name;
+        priceInput.value = SAMPLES[idx].price.toFixed(2);
+      }
+    });
 
-    function renderCart() {
-      const tbody = document.getElementById('cartBody');
-      tbody.innerHTML = '';
-      let total = 0;
-      cart.forEach((it, i) => {
-        const line = it.qty * it.price;
-        total += line;
-        tbody.innerHTML += `<tr><td>${it.barcode}</td><td>${it.name}</td><td>${it.price.toFixed(2)}</td><td>${it.qty}</td><td>${line.toFixed(2)}</td><td><button onclick="removeItem(${i})">Del</button></td></tr>`;
-      });
-      document.getElementById('total').textContent = total.toFixed(2);
-    }
+    // Utilities
+    function escapeHtml(s){ return s.replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
-    function printReceipt() {
-      let html = '<h2>Receipt</h2><ul>';
-      let total = 0;
-      cart.forEach(it => { total += it.qty * it.price; html += `<li>${it.qty}x ${it.name} - ${(it.qty * it.price).toFixed(2)}</li>`; });
-      html += `</ul><strong>Total: ${total.toFixed(2)}</strong>`;
-      const w = window.open('', '_blank');
-      w.document.write(html);
-      w.print();
-    }
+    // On load: try to populate cameras (labels might be empty until permission)
+    (async ()=>{
+      try{ await populateCameras(); }catch(e){}
+    })();
 
-    async function loadZXing() {
-      return new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://unpkg.com/@zxing/browser@0.0.11/umd/index.min.js';
-        s.onload = res;
-        s.onerror = rej;
-        document.body.appendChild(s);
-      });
-    }
+    // Allow pressing Enter in barcode input to add item
+    barcodeInput.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ addBtn.click(); } });
 
-    loadCameras();
-    renderCart();
   </script>
 </body>
 </html>
