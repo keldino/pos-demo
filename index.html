@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Barcode Scanner</title>
+  <style>
+    body { background:#0b0f14; color:white; font-family:Arial, sans-serif; margin:0; padding:0; }
+    .container { display:grid; grid-template-columns:1fr 1fr; gap:1rem; padding:1rem; min-height:100vh; }
+    .card { background:#0f1720; border-radius:12px; padding:1rem; }
+    video { width:100%; height:250px; object-fit:cover; background:black; border-radius:12px; }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; }
+    table th, table td { border:1px solid #333; padding:4px; text-align:center; }
+    input, select, button { padding:0.5rem; border:1px solid #333; border-radius:8px; background:#1e293b; color:white; }
+    button { cursor:pointer; }
+    .actions { display:flex; gap:0.5rem; margin-top:0.5rem; justify-content:flex-end; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>Barcode Scanner</h2>
+      <video id="video" autoplay playsinline></video>
+      <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
+        <select id="cameraSelect"></select>
+        <button onclick="startCamera()">Start</button>
+        <button onclick="stopCamera()">Stop</button>
+      </div>
+      <p>Scanned: <span id="barcodeText">—</span></p>
+      <input type="text" id="barcodeInput" placeholder="Enter barcode">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem; margin-top:0.5rem;">
+        <input type="text" id="nameInput" placeholder="Name">
+        <input type="number" id="priceInput" placeholder="Price">
+        <input type="number" id="qtyInput" placeholder="Qty" value="1">
+      </div>
+      <div class="actions">
+        <button onclick="addItem()">Add</button>
+        <button onclick="clearCart()">Clear</button>
+        <button onclick="printReceipt()">Print</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Cart</h2>
+      <table>
+        <thead>
+          <tr><th>Barcode</th><th>Name</th><th>Price</th><th>Qty</th><th>Line</th><th></th></tr>
+        </thead>
+        <tbody id="cartBody"></tbody>
+      </table>
+      <div style="text-align:right; font-weight:bold; margin-top:0.5rem;">Total: <span id="total">0.00</span></div>
+    </div>
+  </div>
+
+  <script>
+    let cart = JSON.parse(localStorage.getItem('pos-cart') || '[]');
+    let detector, scanning = false;
+
+    const video = document.getElementById('video');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const barcodeText = document.getElementById('barcodeText');
+
+    async function loadCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      cameraSelect.innerHTML = cams.map(c => `<option value="${c.deviceId}">${c.label || 'Camera'}</option>`).join('');
+    }
+
+    async function startCamera() {
+      const deviceId = cameraSelect.value;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId ? { exact: deviceId } : undefined } });
+      video.srcObject = stream;
+      if ('BarcodeDetector' in window) {
+        const formats = await BarcodeDetector.getSupportedFormats();
+        detector = new BarcodeDetector({ formats });
+      } else {
+        await loadZXing();
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        detector = { detect: async canvas => { try { const res = await codeReader.decodeFromImage(undefined, canvas); return [{ rawValue: res.text }]; } catch { return []; } } };
+      }
+      scanning = true;
+      requestAnimationFrame(scanLoop);
+    }
+
+    function stopCamera() {
+      scanning = false;
+      video.srcObject?.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+
+    async function scanLoop() {
+      if (!scanning) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      if (detector) {
+        try {
+          const codes = await (detector.detect ? detector.detect(canvas) : detector.decode(canvas.toDataURL()));
+          if (codes.length) {
+            document.getElementById('barcodeInput').value = codes[0].rawValue;
+            barcodeText.textContent = codes[0].rawValue;
+          }
+        } catch {}
+      }
+      requestAnimationFrame(scanLoop);
+    }
+
+    function addItem() {
+      const barcode = document.getElementById('barcodeInput').value;
+      const name = document.getElementById('nameInput').value;
+      const price = parseFloat(document.getElementById('priceInput').value) || 0;
+      const qty = parseInt(document.getElementById('qtyInput').value) || 1;
+      if (!barcode || !name) return alert('Fill barcode and name');
+      cart.push({ barcode, name, price, qty });
+      saveCart();
+    }
+
+    function saveCart() {
+      localStorage.setItem('pos-cart', JSON.stringify(cart));
+      renderCart();
+    }
+
+    function removeItem(i) {
+      cart.splice(i, 1);
+      saveCart();
+    }
+
+    function clearCart() {
+      if (!confirm('Clear cart?')) return;
+      cart = [];
+      saveCart();
+    }
+
+    function renderCart() {
+      const tbody = document.getElementById('cartBody');
+      tbody.innerHTML = '';
+      let total = 0;
+      cart.forEach((it, i) => {
+        const line = it.qty * it.price;
+        total += line;
+        tbody.innerHTML += `<tr><td>${it.barcode}</td><td>${it.name}</td><td>${it.price.toFixed(2)}</td><td>${it.qty}</td><td>${line.toFixed(2)}</td><td><button onclick="removeItem(${i})">Del</button></td></tr>`;
+      });
+      document.getElementById('total').textContent = total.toFixed(2);
+    }
+
+    function printReceipt() {
+      let html = '<h2>Receipt</h2><ul>';
+      let total = 0;
+      cart.forEach(it => { total += it.qty * it.price; html += `<li>${it.qty}x ${it.name} - ${(it.qty * it.price).toFixed(2)}</li>`; });
+      html += `</ul><strong>Total: ${total.toFixed(2)}</strong>`;
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.print();
+    }
+
+    async function loadZXing() {
+      return new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@zxing/browser@0.0.11/umd/index.min.js';
+        s.onload = res;
+        s.onerror = rej;
+        document.body.appendChild(s);
+      });
+    }
+
+    loadCameras();
+    renderCart();
+  </script>
+</body>
+</html>
